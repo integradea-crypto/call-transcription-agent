@@ -1,0 +1,7 @@
+av==18.0.0
+ctranslate2==4.8.1
+fastapi==0.139.2
+faster-whisper==1.2.1
+google-cloud-bigquery==3.38.0
+python-multipart==0.0.32
+uvicorn==0.51.0

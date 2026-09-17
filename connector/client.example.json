@@ -1,0 +1,7 @@
+{
+  "ssh_host": "customer-calls",
+  "remote_root": "/opt/call-transcription-agent/current/deploy",
+  "runtime_env": "/etc/call-transcription-agent/runtime.env",
+  "compose_file": "docker-compose.yml",
+  "docker_command": "docker"
+}

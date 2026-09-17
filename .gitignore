@@ -1,0 +1,13 @@
+.DS_Store
+.env
+runtime.env
+deploy/secrets/*
+!deploy/secrets/.gitkeep
+*.pem
+*.key
+*service-account*.json
+credentials*.json
+tmp/
+dist/
+__pycache__/
+*.pyc

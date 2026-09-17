@@ -1,0 +1,1015 @@
+[
+  {
+    "id": "callAgentPortableV1",
+    "name": "Bitrix call recordings to local Whisper and BigQuery",
+    "active": false,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "bitrix-call-ended",
+          "options": {}
+        },
+        "id": "8f3c9f1f-f13a-4125-a176-31ceb2e0f0f7",
+        "name": "Bitrix Call End Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          -2448,
+          176
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const p = $json.body ?? $json;\nconst d = p.data?.FIELDS ?? p.data ?? p;\nconst expectedSecret = String($env.BITRIX_WEBHOOK_SECRET || '').trim();\nconst suppliedSecret = String(\n  $json.headers?.['x-webhook-secret'] ||\n  $json.query?.secret ||\n  p.secret ||\n  p.auth?.application_token ||\n  ''\n).trim();\n\nfunction pick(...keys) {\n  for (const key of keys) {\n    const variants = [key, key.toLowerCase(), 'data[' + key + ']', 'data[' + key.toLowerCase() + ']'];\n    for (const variant of variants) {\n      if (d?.[variant] !== undefined && d[variant] !== '') return d[variant];\n      if (p?.[variant] !== undefined && p[variant] !== '') return p[variant];\n    }\n  }\n  return undefined;\n}\n\nfunction numberFromEnv(name, fallback) {\n  const value = Number($env[name] ?? fallback);\n  return Number.isFinite(value) ? value : fallback;\n}\n\nfunction moscowHour(value) {\n  if (!value) return null;\n  const date = new Date(value);\n  if (Number.isNaN(date.getTime())) return null;\n  const parts = new Intl.DateTimeFormat('en-GB', {\n    timeZone: 'Europe/Moscow',\n    hour: '2-digit',\n    hour12: false,\n  }).formatToParts(date);\n  const hour = Number(parts.find((part) => part.type === 'hour')?.value);\n  return Number.isFinite(hour) ? hour : null;\n}\n\nconst activityId = pick('CRM_ACTIVITY_ID', 'ACTIVITY_ID', 'activity_id', 'activityId');\nconst durationRaw = pick('CALL_DURATION', 'DURATION', 'duration');\nconst duration = durationRaw === undefined ? null : Number(durationRaw);\nconst failedCode = String(pick('CALL_FAILED_CODE', 'FAILED_CODE', 'CALL_STATUS_CODE') ?? '').trim();\nconst eventDate = pick('CALL_END_DATE', 'CALL_START_DATE', 'DATE', 'date');\nconst failedPrefixes = ['304', '404', '480', '486', '500', '603'];\nconst hasFailedCode = failedPrefixes.some((code) => failedCode === code || failedCode.startsWith(code + '-'));\nconst minimumDuration = numberFromEnv('MIN_CALL_DURATION_SECONDS', 30);\nconst startHour = numberFromEnv('PROCESSING_START_HOUR_MSK', 0);\nconst endHour = numberFromEnv('PROCESSING_END_HOUR_MSK', 24);\nconst hourMsk = moscowHour(eventDate);\nconst withinWindow = hourMsk !== null && hourMsk >= startHour && hourMsk < endHour;\nconst tokenValid = expectedSecret.length >= 16 && suppliedSecret === expectedSecret;\nconst validActivity = Boolean(activityId) && String(activityId).trim() !== '0';\nconst longEnough = Number.isFinite(duration) && duration >= minimumDuration;\n\nreturn [{\n  json: {\n    activityId,\n    duration,\n    failedCode,\n    eventDate,\n    hourMsk,\n    tokenValid,\n    isSuccessfulCallCandidate: tokenValid && validActivity && longEnough && !hasFailedCode && withinWindow,\n  },\n}];"
+        },
+        "id": "1307729b-7cde-465c-aec9-2f93394742f5",
+        "name": "Normalize Bitrix Payload",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -2224,
+          176
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "72946077-8aa5-4947-afc3-8f11ec93fe7d",
+                "leftValue": "={{ $json.isSuccessfulCallCandidate }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "968db1e7-ab87-488b-a226-19ce0f38401d",
+        "name": "Only successful call candidates",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -2016,
+          176
+        ]
+      },
+      {
+        "parameters": {
+          "amount": 1,
+          "unit": "minutes"
+        },
+        "id": "867a87c2-e1e6-4d37-a61c-f50301edf1d9",
+        "name": "Wait 1 minute before recording lookup",
+        "type": "n8n-nodes-base.wait",
+        "typeVersion": 1.1,
+        "position": [
+          -1776,
+          96
+        ]
+      },
+      {
+        "parameters": {
+          "url": "={{ $env.BITRIX_REST_BASE_URL + '/crm.activity.get.json' }}",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "id",
+                "value": "={{ $('Normalize Bitrix Payload').first().json.activityId }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "64e1586f-e37a-442c-a66a-43117c0856bc",
+        "name": "Get Activity",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -1552,
+          96
+        ]
+      },
+      {
+        "parameters": {
+          "url": "={{ $env.BITRIX_REST_BASE_URL + '/crm.deal.get.json' }}",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "id",
+                "value": "={{ $json.result?.OWNER_TYPE_ID == '2' ? $json.result.OWNER_ID : '' }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "6b51e5b0-3665-4763-afce-a4a00794856e",
+        "name": "Get Deal",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -1328,
+          96
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "url": "={{ $env.BITRIX_REST_BASE_URL + '/voximplant.statistic.get.json' }}",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "FILTER[CRM_ACTIVITY_ID]",
+                "value": "={{ $('Normalize Bitrix Payload').first().json.activityId }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "fd6b1870-2c15-4709-a7d1-54307e062ff1",
+        "name": "Get Call Statistics",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -1104,
+          96
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const activity = $('Get Activity').first().json.result ?? {};\nconst statsResponse = $json ?? {};\nconst statsRows = Array.isArray(statsResponse.result) ? statsResponse.result : [];\nconst stat = statsRows[0] ?? {};\n\nfunction walk(value, path = '') {\n  const out = [];\n  if (value === null || value === undefined) return out;\n  if (typeof value === 'string') out.push({ path, value });\n  else if (Array.isArray(value)) value.forEach((v, i) => out.push(...walk(v, path + '[' + i + ']')));\n  else if (typeof value === 'object') Object.entries(value).forEach(([k, v]) => out.push(...walk(v, path ? path + '.' + k : k)));\n  return out;\n}\n\nfunction looksLikeRecordingUrl(value) {\n  const s = String(value || '');\n  const lower = s.toLowerCase();\n  const isUrl = lower.startsWith('http://') || lower.startsWith('https://');\n  const hasHint = lower.includes('record') || lower.includes('audio') || lower.includes('call') || lower.includes('download') || lower.includes('.mp3') || lower.includes('.m4a') || lower.includes('.wav') || lower.includes('.ogg');\n  return isUrl && hasHint;\n}\n\nconst strings = [...walk(stat), ...walk(activity)];\nconst recordingUrl =\n  stat.CALL_RECORD_URL ||\n  stat.CALL_RECORD ||\n  stat.RECORD_URL ||\n  activity.CALL_RECORD_URL ||\n  (strings.find(({ value }) => looksLikeRecordingUrl(value)) || {}).value ||\n  '';\n\nconst recordingFileId =\n  stat.CALL_WEBDAV_ID ||\n  stat.RECORD_FILE_ID ||\n  stat.FILE_ID ||\n  activity.CALL_WEBDAV_ID ||\n  activity.RECORD_FILE_ID ||\n  activity.FILE_ID ||\n  '';\n\nreturn [{ json: { recordingUrl, recordingFileId, stat, activityId: $('Normalize Bitrix Payload').first().json.activityId } }];"
+        },
+        "id": "9fb53113-e977-4ee7-a984-b9f1e1b8b2e2",
+        "name": "Resolve Recording Metadata",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -896,
+          96
+        ]
+      },
+      {
+        "parameters": {
+          "url": "={{ $env.BITRIX_REST_BASE_URL + '/disk.file.get.json' }}",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "id",
+                "value": "={{ $('Resolve Recording Metadata').first().json.recordingFileId || '' }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "662039c3-2d46-4db3-ad4c-90df9360cdec",
+        "name": "Get Disk File Info",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -672,
+          96
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const meta = $('Resolve Recording Metadata').first().json;\nconst disk = $('Get Disk File Info').first().json ?? {};\nconst diskResult = disk.result ?? {};\nconst diskUrl = diskResult.DOWNLOAD_URL || diskResult.downloadUrl || diskResult.url || '';\nconst recordingUrl = meta.recordingUrl || diskUrl || '';\nreturn [{ json: { ...meta, recordingUrl, diskFileInfo: diskResult } }];"
+        },
+        "id": "647d354e-362b-4519-a84b-bab495937c8c",
+        "name": "Resolve Download URL",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -448,
+          96
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "47e720e2-2796-405d-b4e4-516028c6b78c",
+                "leftValue": "={{ Boolean($json.recordingUrl) }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "2b5834e5-b0cd-4c16-aeaa-5a220f942f5c",
+        "name": "Recording URL found?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -224,
+          96
+        ]
+      },
+      {
+        "parameters": {
+          "url": "={{ $json.recordingUrl }}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "file",
+                "outputPropertyName": "recording"
+              }
+            }
+          }
+        },
+        "id": "617ff7e6-ae04-432c-ab1e-2e214fd694e7",
+        "name": "Download Recording",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          0,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://call-service:8000/transcribe",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Internal-Token",
+                "value": "={{ $env.CALLS_API_TOKEN }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "multipart-form-data",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "parameterType": "formBinaryData",
+                "name": "audio",
+                "inputDataFieldName": "recording"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 900000,
+            "response": {
+              "response": {
+                "responseFormat": "text",
+                "outputPropertyName": "transcript"
+              }
+            }
+          }
+        },
+        "id": "a9b3d156-be68-4fc1-acae-5a6adad7861a",
+        "name": "Transcribe with Local Whisper",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          432,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "d663240b-4bb6-45b6-b302-06607482d13e",
+                "leftValue": "={{ Boolean(String($json.transcript || $json.data || $json.body || \"\").trim()) }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "56ab1131-8fb4-40d2-af3b-4994d9d7cbc0",
+        "name": "Transcript created?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          656,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const norm = $('Normalize Bitrix Payload').first().json ?? {};\nconst meta = $('Capture Recording Context').first().json ?? {};\nconst activity = $('Get Activity').first().json.result ?? {};\nconst deal = $('Get Deal').first().json.result ?? {};\nconst stat = meta.stat ?? {};\nconst transcription = $('Transcribe with Local Whisper').first().json ?? {};\nconst transcript = String(transcription.transcript || transcription.data || transcription.body || '')\n  .trim()\n  .replace(/\\s*(?:Корректор\\s+А\\.?\\s*Егорова\\.?)\\s*$/iu, '')\n  .trim();\n\nif (!transcript) return [];\n\nfunction cleanId(value) {\n  if (value === null || value === undefined) return '';\n  return String(value).trim();\n}\n\nfunction toTimestamp(value) {\n  if (!value) return null;\n  const date = new Date(value);\n  if (Number.isNaN(date.getTime())) return null;\n  return date.toISOString();\n}\n\nconst communications = Array.isArray(activity.COMMUNICATIONS) ? activity.COMMUNICATIONS : [];\nconst contactFromActivity = communications.find((item) =>\n  String(item.ENTITY_TYPE_ID) === '3' || String(item.ENTITY_TYPE ?? '').toUpperCase() === 'CONTACT'\n)?.ENTITY_ID ?? '';\nconst contactFromOwner = String(activity.OWNER_TYPE_ID) === '3' ? activity.OWNER_ID : '';\nconst dealId = deal.ID || (String(activity.OWNER_TYPE_ID) === '2' ? activity.OWNER_ID : '');\nconst contactId = deal.CONTACT_ID || contactFromActivity || contactFromOwner || '';\nconst employeeId =\n  stat.PORTAL_USER_ID || stat.USER_ID || stat.USER_ID_CALL ||\n  activity.RESPONSIBLE_ID || activity.AUTHOR_ID || activity.EDITOR_ID || '';\nconst activityId = cleanId(meta.activityId || norm.activityId || stat.CRM_ACTIVITY_ID || activity.ID);\n\nif (!activityId) throw new Error('Cannot store a call without activity_id');\n\nconst callDate = activity.END_TIME || activity.START_TIME || stat.CALL_START_DATE || norm.eventDate;\nconst row = {\n  activity_id: activityId,\n  call_datetime: toTimestamp(callDate),\n  employee_id: cleanId(employeeId),\n  stage_id: cleanId(deal.STAGE_ID),\n  deal_id: cleanId(dealId),\n  contact_id: cleanId(contactId),\n  transcript,\n  transcript_model: 'large-v3-turbo',\n  source_workflow_id: String($workflow.id),\n  source_execution_id: String($execution.id),\n  inserted_at: new Date().toISOString(),\n};\n\nreturn [{ json: { row } }];"
+        },
+        "id": "f3422e00-10ca-4f1a-a72b-4333ec588f6f",
+        "name": "Build BigQuery Row",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          760,
+          -80
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "return [];"
+        },
+        "id": "cd2bfd1f-0586-4f45-a944-761279ea14ef",
+        "name": "No recording URL - stop",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          0,
+          256
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "return [];"
+        },
+        "id": "1f08e01f-4338-4adc-ab7d-aeba37e311c5",
+        "name": "No transcript created - stop",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          880,
+          256
+        ]
+      },
+      {
+        "parameters": {
+          "amount": 3,
+          "unit": "minutes"
+        },
+        "id": "865c677b-aee6-417b-a9ec-2249cdf03129",
+        "name": "Wait 3 minutes before recording retry 2",
+        "type": "n8n-nodes-base.wait",
+        "typeVersion": 1.1,
+        "position": [
+          -224,
+          320
+        ]
+      },
+      {
+        "parameters": {
+          "url": "={{ $env.BITRIX_REST_BASE_URL + '/voximplant.statistic.get.json' }}",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "FILTER[CRM_ACTIVITY_ID]",
+                "value": "={{ $('Normalize Bitrix Payload').first().json.activityId }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "705c067e-0151-4ebd-a060-04fab5950af4",
+        "name": "Get Call Statistics retry 2",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          0,
+          320
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const activity = $('Get Activity').first().json.result ?? {};\nconst statsResponse = $json ?? {};\nconst statsRows = Array.isArray(statsResponse.result) ? statsResponse.result : [];\nconst stat = statsRows[0] ?? {};\n\nfunction walk(value, path = '') {\n  const out = [];\n  if (value === null || value === undefined) return out;\n  if (typeof value === 'string') out.push({ path, value });\n  else if (Array.isArray(value)) value.forEach((v, i) => out.push(...walk(v, path + '[' + i + ']')));\n  else if (typeof value === 'object') Object.entries(value).forEach(([k, v]) => out.push(...walk(v, path ? path + '.' + k : k)));\n  return out;\n}\n\nfunction looksLikeRecordingUrl(value) {\n  const s = String(value || '');\n  const lower = s.toLowerCase();\n  const isUrl = lower.startsWith('http://') || lower.startsWith('https://');\n  const hasHint = lower.includes('record') || lower.includes('audio') || lower.includes('call') || lower.includes('download') || lower.includes('.mp3') || lower.includes('.m4a') || lower.includes('.wav') || lower.includes('.ogg');\n  return isUrl && hasHint;\n}\n\nconst strings = [...walk(stat), ...walk(activity)];\nconst recordingUrl =\n  stat.CALL_RECORD_URL ||\n  stat.CALL_RECORD ||\n  stat.RECORD_URL ||\n  activity.CALL_RECORD_URL ||\n  (strings.find(({ value }) => looksLikeRecordingUrl(value)) || {}).value ||\n  '';\n\nconst recordingFileId =\n  stat.CALL_WEBDAV_ID ||\n  stat.RECORD_FILE_ID ||\n  stat.FILE_ID ||\n  activity.CALL_WEBDAV_ID ||\n  activity.RECORD_FILE_ID ||\n  activity.FILE_ID ||\n  '';\n\nreturn [{ json: { recordingUrl, recordingFileId, stat, activityId: $('Normalize Bitrix Payload').first().json.activityId } }];"
+        },
+        "id": "e8f99543-d31f-47aa-aad4-4c24d071034a",
+        "name": "Resolve Recording Metadata retry 2",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          224,
+          320
+        ]
+      },
+      {
+        "parameters": {
+          "url": "={{ $env.BITRIX_REST_BASE_URL + '/disk.file.get.json' }}",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "id",
+                "value": "={{ $('Resolve Recording Metadata retry 2').first().json.recordingFileId || '' }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "42a0e903-cd6f-436d-a883-16fa0ed163e6",
+        "name": "Get Disk File Info retry 2",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          448,
+          320
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const meta = $('Resolve Recording Metadata retry 2').first().json;\nconst disk = $('Get Disk File Info retry 2').first().json ?? {};\nconst diskResult = disk.result ?? {};\nconst diskUrl = diskResult.DOWNLOAD_URL || diskResult.downloadUrl || diskResult.url || '';\nconst recordingUrl = meta.recordingUrl || diskUrl || '';\nreturn [{ json: { ...meta, recordingUrl, diskFileInfo: diskResult } }];"
+        },
+        "id": "c723805f-8118-47dc-aeb9-c7625030aecf",
+        "name": "Resolve Download URL retry 2",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          672,
+          320
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "47e720e2-2796-405d-b4e4-516028c6b78c",
+                "leftValue": "={{ Boolean($json.recordingUrl) }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "3eb7216e-974d-4159-a723-7af84f429b57",
+        "name": "Recording URL found? retry 2",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          896,
+          320
+        ]
+      },
+      {
+        "parameters": {
+          "amount": 10,
+          "unit": "minutes"
+        },
+        "id": "ca33fea7-ae6c-460b-a469-02b0007a609b",
+        "name": "Wait 10 minutes before recording retry 3",
+        "type": "n8n-nodes-base.wait",
+        "typeVersion": 1.1,
+        "position": [
+          1120,
+          320
+        ]
+      },
+      {
+        "parameters": {
+          "url": "={{ $env.BITRIX_REST_BASE_URL + '/voximplant.statistic.get.json' }}",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "FILTER[CRM_ACTIVITY_ID]",
+                "value": "={{ $('Normalize Bitrix Payload').first().json.activityId }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "42ae0e2a-1ca7-4b46-a30a-ab179c5d9fc4",
+        "name": "Get Call Statistics retry 3",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1344,
+          320
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const activity = $('Get Activity').first().json.result ?? {};\nconst statsResponse = $json ?? {};\nconst statsRows = Array.isArray(statsResponse.result) ? statsResponse.result : [];\nconst stat = statsRows[0] ?? {};\n\nfunction walk(value, path = '') {\n  const out = [];\n  if (value === null || value === undefined) return out;\n  if (typeof value === 'string') out.push({ path, value });\n  else if (Array.isArray(value)) value.forEach((v, i) => out.push(...walk(v, path + '[' + i + ']')));\n  else if (typeof value === 'object') Object.entries(value).forEach(([k, v]) => out.push(...walk(v, path ? path + '.' + k : k)));\n  return out;\n}\n\nfunction looksLikeRecordingUrl(value) {\n  const s = String(value || '');\n  const lower = s.toLowerCase();\n  const isUrl = lower.startsWith('http://') || lower.startsWith('https://');\n  const hasHint = lower.includes('record') || lower.includes('audio') || lower.includes('call') || lower.includes('download') || lower.includes('.mp3') || lower.includes('.m4a') || lower.includes('.wav') || lower.includes('.ogg');\n  return isUrl && hasHint;\n}\n\nconst strings = [...walk(stat), ...walk(activity)];\nconst recordingUrl =\n  stat.CALL_RECORD_URL ||\n  stat.CALL_RECORD ||\n  stat.RECORD_URL ||\n  activity.CALL_RECORD_URL ||\n  (strings.find(({ value }) => looksLikeRecordingUrl(value)) || {}).value ||\n  '';\n\nconst recordingFileId =\n  stat.CALL_WEBDAV_ID ||\n  stat.RECORD_FILE_ID ||\n  stat.FILE_ID ||\n  activity.CALL_WEBDAV_ID ||\n  activity.RECORD_FILE_ID ||\n  activity.FILE_ID ||\n  '';\n\nreturn [{ json: { recordingUrl, recordingFileId, stat, activityId: $('Normalize Bitrix Payload').first().json.activityId } }];"
+        },
+        "id": "b415f338-551e-4c46-a10e-c6b11efffcd3",
+        "name": "Resolve Recording Metadata retry 3",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1568,
+          320
+        ]
+      },
+      {
+        "parameters": {
+          "url": "={{ $env.BITRIX_REST_BASE_URL + '/disk.file.get.json' }}",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "id",
+                "value": "={{ $('Resolve Recording Metadata retry 3').first().json.recordingFileId || '' }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "c2f02b9c-b8fd-4187-a06c-3d6721b22d87",
+        "name": "Get Disk File Info retry 3",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1792,
+          320
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const meta = $('Resolve Recording Metadata retry 3').first().json;\nconst disk = $('Get Disk File Info retry 3').first().json ?? {};\nconst diskResult = disk.result ?? {};\nconst diskUrl = diskResult.DOWNLOAD_URL || diskResult.downloadUrl || diskResult.url || '';\nconst recordingUrl = meta.recordingUrl || diskUrl || '';\nreturn [{ json: { ...meta, recordingUrl, diskFileInfo: diskResult } }];"
+        },
+        "id": "7a346f95-5463-4547-a140-0ebc2a43a359",
+        "name": "Resolve Download URL retry 3",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2016,
+          320
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "47e720e2-2796-405d-b4e4-516028c6b78c",
+                "leftValue": "={{ Boolean($json.recordingUrl) }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "f42215ee-72da-48a8-a7ea-aa6fe087ded8",
+        "name": "Recording URL found? retry 3",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          2240,
+          320
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "return $input.all().map((item) => ({ json: item.json, binary: item.binary }));"
+        },
+        "id": "0521b006-213f-4790-afae-c91c75d8e5ad",
+        "name": "Capture Recording Context",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -360,
+          -80
+        ]
+      },
+      {
+        "id": "857de0fb-42e6-472f-ac1a-c763c648b91d",
+        "name": "Upsert Call",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1240,
+          -80
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "http://call-service:8000/calls/upsert",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Internal-Token",
+                "value": "={{ $env.CALLS_API_TOKEN }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $('Build BigQuery Row').first().json.row }}",
+          "options": {
+            "timeout": 120000
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Bitrix Call End Webhook": {
+        "main": [
+          [
+            {
+              "node": "Normalize Bitrix Payload",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalize Bitrix Payload": {
+        "main": [
+          [
+            {
+              "node": "Only successful call candidates",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Only successful call candidates": {
+        "main": [
+          [
+            {
+              "node": "Wait 1 minute before recording lookup",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Wait 1 minute before recording lookup": {
+        "main": [
+          [
+            {
+              "node": "Get Activity",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Activity": {
+        "main": [
+          [
+            {
+              "node": "Get Deal",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Deal": {
+        "main": [
+          [
+            {
+              "node": "Get Call Statistics",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Call Statistics": {
+        "main": [
+          [
+            {
+              "node": "Resolve Recording Metadata",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resolve Recording Metadata": {
+        "main": [
+          [
+            {
+              "node": "Get Disk File Info",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Disk File Info": {
+        "main": [
+          [
+            {
+              "node": "Resolve Download URL",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resolve Download URL": {
+        "main": [
+          [
+            {
+              "node": "Recording URL found?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Recording URL found?": {
+        "main": [
+          [
+            {
+              "node": "Capture Recording Context",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Wait 3 minutes before recording retry 2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Download Recording": {
+        "main": [
+          [
+            {
+              "node": "Transcribe with Local Whisper",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Transcript created?": {
+        "main": [
+          [
+            {
+              "node": "Build BigQuery Row",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "No transcript created - stop",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Transcribe with Local Whisper": {
+        "main": [
+          [
+            {
+              "node": "Transcript created?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Wait 3 minutes before recording retry 2": {
+        "main": [
+          [
+            {
+              "node": "Get Call Statistics retry 2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Call Statistics retry 2": {
+        "main": [
+          [
+            {
+              "node": "Resolve Recording Metadata retry 2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resolve Recording Metadata retry 2": {
+        "main": [
+          [
+            {
+              "node": "Get Disk File Info retry 2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Disk File Info retry 2": {
+        "main": [
+          [
+            {
+              "node": "Resolve Download URL retry 2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resolve Download URL retry 2": {
+        "main": [
+          [
+            {
+              "node": "Recording URL found? retry 2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Recording URL found? retry 2": {
+        "main": [
+          [
+            {
+              "node": "Capture Recording Context",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Wait 10 minutes before recording retry 3",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Wait 10 minutes before recording retry 3": {
+        "main": [
+          [
+            {
+              "node": "Get Call Statistics retry 3",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Call Statistics retry 3": {
+        "main": [
+          [
+            {
+              "node": "Resolve Recording Metadata retry 3",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resolve Recording Metadata retry 3": {
+        "main": [
+          [
+            {
+              "node": "Get Disk File Info retry 3",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Disk File Info retry 3": {
+        "main": [
+          [
+            {
+              "node": "Resolve Download URL retry 3",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resolve Download URL retry 3": {
+        "main": [
+          [
+            {
+              "node": "Recording URL found? retry 3",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Recording URL found? retry 3": {
+        "main": [
+          [
+            {
+              "node": "Capture Recording Context",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "No recording URL - stop",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Capture Recording Context": {
+        "main": [
+          [
+            {
+              "node": "Download Recording",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build BigQuery Row": {
+        "main": [
+          [
+            {
+              "node": "Upsert Call",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "saveManualExecutions": true,
+      "saveExecutionProgress": true,
+      "saveDataErrorExecution": "all",
+      "saveDataSuccessExecution": "all",
+      "timezone": "Europe/Moscow"
+    },
+    "staticData": null
+  }
+]

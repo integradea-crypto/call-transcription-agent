@@ -1,0 +1,4 @@
+interface:
+  display_name: "Call Transcription Analytics"
+  short_description: "Install and analyze a private call transcription pipeline"
+  default_prompt: "Install, validate, or analyze calls with the call transcription pipeline."

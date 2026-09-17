@@ -1,0 +1,11 @@
+{
+  "data": {
+    "FIELDS": {
+      "CRM_ACTIVITY_ID": "900001",
+      "CALL_DURATION": "94",
+      "CALL_FAILED_CODE": "200",
+      "CALL_END_DATE": "2026-01-15T10:25:00+03:00"
+    }
+  },
+  "secret": "SYNTHETIC_TEST_SECRET"
+}

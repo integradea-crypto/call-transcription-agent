@@ -1,0 +1,100 @@
+services:
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [backend]
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:2.39.6
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      call-service:
+        condition: service_healthy
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_HOST: ${N8N_HOST}
+      N8N_PROTOCOL: https
+      N8N_PORT: 5678
+      WEBHOOK_URL: https://${N8N_HOST}/
+      N8N_PROXY_HOPS: 1
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-Europe/Moscow}
+      TZ: ${GENERIC_TIMEZONE:-Europe/Moscow}
+      N8N_CONCURRENCY_PRODUCTION_LIMIT: ${N8N_CONCURRENCY_PRODUCTION_LIMIT:-2}
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: ${EXECUTIONS_DATA_MAX_AGE:-336}
+      N8N_DEFAULT_BINARY_DATA_MODE: filesystem
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      BITRIX_REST_BASE_URL: ${BITRIX_REST_BASE_URL}
+      BITRIX_WEBHOOK_SECRET: ${BITRIX_WEBHOOK_SECRET}
+      MIN_CALL_DURATION_SECONDS: ${MIN_CALL_DURATION_SECONDS:-30}
+      PROCESSING_START_HOUR_MSK: ${PROCESSING_START_HOUR_MSK:-0}
+      PROCESSING_END_HOUR_MSK: ${PROCESSING_END_HOUR_MSK:-24}
+      CALLS_API_TOKEN: ${CALLS_API_TOKEN}
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - n8n-binary-data:/data/binary-data
+      - ../n8n:/workflows:ro
+    ports:
+      - "127.0.0.1:5678:5678"
+    networks: [backend]
+
+  call-service:
+    build:
+      context: ../transcriber
+    restart: unless-stopped
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/bigquery-service-account.json
+      CALLS_API_TOKEN_FILE: /run/secrets/internal-api-token
+      BQ_PROJECT_ID: ${BQ_PROJECT_ID}
+      BQ_DATASET: ${BQ_DATASET}
+      BQ_CALLS_TABLE: ${BQ_CALLS_TABLE:-calls}
+      BQ_LOCATION: ${BQ_LOCATION:-EU}
+      WHISPER_MODEL: ${WHISPER_MODEL:-large-v3-turbo}
+      WHISPER_LANGUAGE: ${WHISPER_LANGUAGE:-ru}
+      WHISPER_DEVICE: ${WHISPER_DEVICE:-cpu}
+      WHISPER_COMPUTE_TYPE: ${WHISPER_COMPUTE_TYPE:-int8}
+      WHISPER_BEAM_SIZE: ${WHISPER_BEAM_SIZE:-1}
+      WHISPER_CONCURRENCY: ${WHISPER_CONCURRENCY:-1}
+      WHISPER_VAD_FILTER: ${WHISPER_VAD_FILTER:-false}
+      WHISPER_INITIAL_PROMPT_FILE: /config/initial-prompt.txt
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-250}
+    volumes:
+      - whisper-models:/models
+      - ./initial-prompt.txt:/config/initial-prompt.txt:ro
+      - ./secrets/bigquery-service-account.json:/run/secrets/bigquery-service-account.json:ro
+      - ./secrets/internal-api-token:/run/secrets/internal-api-token:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "6.0"
+          memory: 12G
+    networks: [backend]
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  n8n-data:
+  n8n-binary-data:
+  whisper-models:
