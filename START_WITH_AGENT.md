@@ -1,6 +1,6 @@
-# Start With Codex Or Claude
+# Как начать с Codex или Claude
 
-Install the bundled skill first:
+Сначала установите скилл из пакета:
 
 ```bash
 # Codex
@@ -10,31 +10,31 @@ cp -R skill/call-transcription-analytics ~/.codex/skills/
 cp -R skill/call-transcription-analytics ~/.claude/skills/
 ```
 
-Then give the agent this request with your own paths and non-secret identifiers:
+Затем отправьте агенту такой запрос, подставив свои пути и несекретные идентификаторы:
 
 ```text
-Use the call-transcription-analytics skill and this package.
+Используй скилл call-transcription-analytics и этот пакет.
 
-Package path: /path/to/call-transcription-agent
-Existing SSH host alias: <alias or "no server yet">
-SSH private-key path: <path or "managed by SSH agent">
-Google service-account JSON path: <path>
-Bitrix REST URL file: <path>
-BigQuery target: <project.dataset.calls>
-BigQuery location: <EU, US, or region>
-Public hostname: <hostname or "not selected">
-Expected calls per business day: <number>
-Typical and maximum call duration: <minutes>
-Required transcript delay: <minutes or hours>
-Required server country/region: <region or "no restriction">
+Путь к пакету: /path/to/call-transcription-agent
+Существующий алиас SSH-хоста: <алиас или "сервера ещё нет">
+Путь к приватному SSH-ключу: <путь или "управляется SSH-агентом">
+Путь к JSON сервисного аккаунта Google: <путь>
+Файл с Bitrix REST URL: <путь>
+Целевая таблица BigQuery: <project.dataset.calls>
+Регион BigQuery: <EU, US или регион>
+Публичный хостнейм: <хостнейм или "не выбран">
+Ожидаемое число звонков в рабочий день: <число>
+Типичная и максимальная длительность звонка: <минуты>
+Требуемая задержка появления транскрипта: <минуты или часы>
+Требуемая страна/регион сервера: <регион или "без ограничений">
 
-Do not print or copy secret values into chat, logs, workflow JSON, or reports.
-First validate only the credential types and access scopes, inspect the existing
-server if one is supplied, and recommend the server, region, installation path,
-and required changes. If there is no server, compare suitable current hosting
-options and give a concrete size recommendation. Show the full preflight report
-and deployment plan before making infrastructure changes. Keep the n8n workflow
-inactive until I explicitly approve activation.
+Не печатай и не копируй значения секретов в чат, логи, workflow JSON или отчёты.
+Сначала проверь только типы credentials и scope доступа, осмотри существующий
+сервер, если он указан, и порекомендуй сервер, регион, путь установки и
+необходимые изменения. Если сервера нет — сравни подходящие варианты текущего
+хостинга и дай конкретную рекомендацию по размеру. Покажи полный preflight-отчёт
+и план развёртывания перед внесением изменений в инфраструктуру. Держи n8n
+workflow неактивным, пока я явно не подтвержу активацию.
 ```
 
-The agent should ask only for genuinely missing information. Credential values stay in protected files; the user shares paths or secret-manager references.
+Агент должен спрашивать только о действительно недостающей информации. Значения credentials остаются в защищённых файлах; пользователь делится путями или ссылками на secret-manager.

@@ -1,50 +1,56 @@
-# Call Transcription Agent
+# Агент транскрибации звонков
 
-Portable pipeline for receiving completed-call events from Bitrix24, downloading the recording, transcribing it with local `faster-whisper`, storing an idempotent record in BigQuery, and making transcripts available to Codex or Claude through a read-only skill.
+Переносимый пайплайн: получает событие о завершённом звонке из Bitrix24, скачивает запись, транскрибирует её локально через `faster-whisper`, сохраняет идемпотентную запись в BigQuery и делает транскрипты доступными для Codex или Claude через отдельный read-only скилл.
 
-This folder is a standalone repository for one shareable agent product. It does not contain other agents from the local `агенты` catalog.
+Эта папка — самостоятельный репозиторий одного продукта-агента. Других агентов из общего каталога «агенты» здесь нет.
 
-## Included
+## Что входит
 
-- n8n workflow with no credentials, customer IDs, domains, or production webhook paths.
-- Local transcription and BigQuery storage API.
-- Docker Compose deployment for n8n, PostgreSQL, and the call service.
-- BigQuery schema and `activity_id` deduplication.
-- Shared Codex/Claude skill with an SSH-based read-only query helper.
-- Synthetic fixtures, package validation, secret scanning, and a health smoke test.
+- n8n workflow без credentials, ID клиентов, доменов и продакшн webhook-путей.
+- API локальной транскрибации и хранения в BigQuery.
+- Docker Compose для n8n, PostgreSQL и call-сервиса.
+- Схема BigQuery и дедупликация по `activity_id`.
+- Общий скилл для Codex/Claude с read-only SSH-хелпером для запросов.
+- Синтетические фикстуры, валидация пакета, поиск секретов и health-смоук-тест.
 
-## Supported V1 Flow
+## Поддерживаемый V1-поток
 
 ```text
-Bitrix24 call event
-  -> n8n webhook
-  -> Bitrix REST metadata and recording
-  -> local faster-whisper large-v3-turbo
-  -> BigQuery MERGE by activity_id
-  -> read-only agent skill
+Событие звонка в Bitrix24
+  -> вебхук n8n
+  -> метаданные и запись через Bitrix REST
+  -> локальный faster-whisper large-v3-turbo
+  -> BigQuery MERGE по activity_id
+  -> read-only скилл агента
 ```
 
-## Start Here
+## Ограничения и допущения
 
-1. Open [Start With Codex Or Claude](START_WITH_AGENT.md).
-2. Read [Architecture](docs/architecture.md).
-3. Read [Agent-assisted installation](docs/agent-installation.md).
-4. Put secrets only in local files outside this package.
-5. Run `python3 tests/validate_package.py`.
-6. Deploy by following [Installation](docs/installation.md).
+- Деанонимизация данных не предусмотрена. Это MVP-продукт: очистка или обезличивание персональных данных в транскриптах не выполняется. AI-провайдер, которым вы пользуетесь (например, Codex или Claude), получает доступ к транскриптам через этот workflow напрямую из Bitrix — без предварительного обезличивания.
+- Подразумевается, что CRM Bitrix уже настроена и доступна по REST.
+- В качестве хранилища используется облачная база данных Google BigQuery. Для пользователей из России регистрация аккаунта Google Cloud Platform требует дополнительных усилий из-за ограничений на оплату и доступ для российских юрлиц и карт.
 
-For a handoff archive, run `python3 scripts/package_release.py`. It creates a deterministic release under the sibling `call-transcription-agent-dist` directory with a manifest and SHA-256 checksum.
+## С чего начать
 
-The user should give an installing agent filesystem paths or secret references. Secret values should not be pasted into chat, command arguments, workflow JSON, or documentation.
+1. Открыть [Start With Codex Or Claude](START_WITH_AGENT.md).
+2. Прочитать [Architecture](docs/architecture.md).
+3. Прочитать [Agent-assisted installation](docs/agent-installation.md).
+4. Секреты хранить только в локальных файлах вне этого пакета.
+5. Запустить `python3 tests/validate_package.py`.
+6. Развернуть по [Installation](docs/installation.md).
 
-## Tested Baseline
+Для сборки архива на передачу запустите `python3 scripts/package_release.py`. Он создаёт детерминированный релиз в соседней папке `call-transcription-agent-dist` с манифестом и SHA-256 чексуммой.
+
+Пользователь должен передавать устанавливающему агенту пути в файловой системе или ссылки на секреты. Значения секретов нельзя вставлять в чат, аргументы команд, workflow JSON или документацию.
+
+## Проверенная база
 
 - Ubuntu 24.04 LTS
-- Docker Engine with Docker Compose v2
+- Docker Engine с Docker Compose v2
 - n8n 2.39.6
 - PostgreSQL 15
 - Python 3.11
 - faster-whisper 1.2.1
-- BigQuery in an explicitly configured region
+- BigQuery в явно заданном регионе
 
-See [Server requirements](docs/server-requirements.md) before deployment.
+См. [Server requirements](docs/server-requirements.md) перед развёртыванием.
