@@ -24,6 +24,9 @@ def included_files() -> list[Path]:
             continue
         if relative.parts[:2] == ("deploy", "secrets") and path.name != ".gitkeep":
             continue
+        # Never ship the private production-literal denylist; only its template is public.
+        if relative.as_posix() == "tests/forbidden-literals.txt":
+            continue
         files.append(path)
     return sorted(files, key=lambda item: item.relative_to(ROOT).as_posix())
 
