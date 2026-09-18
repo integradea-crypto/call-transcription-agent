@@ -35,8 +35,9 @@ Default to one dedicated Linux host:
 
 - install root: `/opt/call-transcription-agent`;
 - runtime environment: `/etc/call-transcription-agent/runtime.env` with mode `0600`;
-- BigQuery key: `/etc/call-transcription-agent/secrets/bigquery-service-account.json` with mode `0600`;
-- internal token: `/etc/call-transcription-agent/secrets/internal-api-token` with mode `0600`;
+- BigQuery key: `/opt/call-transcription-agent/current/deploy/secrets/bigquery-service-account.json` with mode `0600`;
+- internal token: `/opt/call-transcription-agent/current/deploy/secrets/internal-api-token` with mode `0600`;
+- both secret files must live in the `deploy/secrets/` directory next to `docker-compose.yml`, because the compose file bind-mounts them from that relative path; do not place them under `/etc`;
 - persistent Docker volumes for PostgreSQL, n8n, and Whisper model cache;
 - only ports 22, 80, and 443 exposed publicly; n8n and call-service stay private.
 
