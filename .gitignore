@@ -7,6 +7,7 @@ deploy/secrets/*
 *.key
 *service-account*.json
 credentials*.json
+tests/forbidden-literals.txt
 tmp/
 dist/
 __pycache__/
