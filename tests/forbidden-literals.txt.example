@@ -1,0 +1,17 @@
+# Template for the production-literal denylist used by tests/validate_package.py.
+#
+# Copy this file to tests/forbidden-literals.txt (which is gitignored) and fill it
+# with the real production-specific values that must never appear in the release
+# package: client subdomains, GTM/container IDs, webhook tokens, internal hostnames.
+#
+# Format: one literal per line. Blank lines and lines starting with '#' are ignored.
+# The validator matches these as plain substrings (case-sensitive).
+#
+# The values are secrets, so DO NOT commit the filled-in file. CI can instead pass
+# them via the FORBIDDEN_LITERALS env var (newline- or comma-separated).
+#
+# Examples of the kinds of values to list (replace with your own):
+# your-client.bitrix24.ru
+# gtm-xxxxxxx-xxxxx
+# your-webhook-secret-token
+# your-internal-host.example
